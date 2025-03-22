@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RetainTalent - Train Model</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/home.css') }}">
+
+    <style>
+        .scrollable-container {
+            max-height: 300px;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+            padding: 10px;
+            background: #fff;
+        }
+        .model-card {
+            transition: transform 0.2s;
+            cursor: pointer;
+        }
+        .model-card:hover {
+            transform: translateY(-5px);
+        }
+        .model-card.selected {
+            border: 2px solid #0d6efd;
+            box-shadow: 0 0 10px rgba(13, 110, 253, 0.5);
+        }
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid rgba(0, 0, 0, 0.1);
+            border-radius: 50%;
+            border-top-color: #007bff;
+            animation: spin 1s ease-in-out infinite;
+            margin-left: 10px;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        .navbar {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            margin-bottom: 20px;
+        }
+        .file-name-display {
+            margin-top: 10px;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body class="bg-light">
+    <nav class="navbar navbar-expand-lg navbar-dark fixed-top">
+        <div class="container">
+            <a class="navbar-brand animate__animated animate__fadeIn" href="/">
+                <i class="fas fa-brain me-2"></i>RetainTalent
+            </a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav ms-auto">
+                    <li class="nav-item">
+                        <a class="nav-link  animate__animated animate__fadeIn" href="/">Home</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link active animate__animated animate__fadeIn" href="/eda_train" style="animation-delay: 0.3s">Train</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link animate__animated animate__fadeIn" href="/predict_page" style="animation-delay: 0.1s">Predict</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link animate__animated animate__fadeIn" href="/visualize" style="animation-delay: 0.2s">Visualize</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link animate__animated animate__fadeIn" href="/about" style="animation-delay: 0.4s">About Us</a>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container mt-4">
+        <h2 class="text-center mb-4">Train Attrition Prediction Model</h2>
+        
+        <div class="card shadow mb-4">
+            <div class="card-body">
+                <h5>Upload Dataset</h5>
+                <form id="uploadForm" action="/upload" method="post" enctype="multipart/form-data">
+                    <div class="mb-3">
+                        <label for="file" class="form-label">Select CSV file with employee data</label>
+                        <input class="form-control" type="file" id="file" name="file" accept=".csv" onchange="updateFileName()">
+                        <small class="text-muted">File must contain an 'Attrition' column with Yes/No or 1/0 values</small>
+                        <div id="fileNameDisplay" class="file-name-display"></div>
+                    </div>
+                    <button type="submit" class="btn btn-primary">Upload</button>
+                </form>
+            </div>
+        </div>
+
+        {% if data_preview %}
+        <div class="card shadow mb-4">
+            <div class="card-body">
+                <h5>Data Preview</h5>
+                <div class="scrollable-container">
+                    <table class="table table-striped table-sm">
+                        <thead>
+                            <tr>
+                                {% for key in data_preview[0].keys() %}
+                                <th>{{ key }}</th>
+                                {% endfor %}
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for row in data_preview %}
+                            <tr>
+                                {% for key, value in row.items() %}
+                                <td>{{ value }}</td>
+                                {% endfor %}
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                <button type="button" class="btn btn-primary mt-3" onclick="performEDA()">Perform EDA</button>
+                <span id="edaStatus"></span>
+            </div>
+        </div>
+
+        <div class="card shadow mb-4">
+            <div class="card-body">
+                <h5>Select Model</h5>
+                <div class="row">
+                    <div class="col-md-4 mb-3">
+                        <div class="card model-card" onclick="selectModel(this, 'logistic')">
+                            <div class="card-body">
+                                <h5 class="card-title">Logistic Regression</h5>
+                                <p class="card-text">Simple, interpretable model with good baseline performance.</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-4 mb-3">
+                        <div class="card model-card" onclick="selectModel(this, 'random_forest')">
+                            <div class="card-body">
+                                <h5 class="card-title">Random Forest</h5>
+                                <p class="card-text">Robust ensemble model with good feature importance capabilities.</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-4 mb-3">
+                        <div class="card model-card" onclick="selectModel(this, 'decision_tree')">
+                            <div class="card-body">
+                                <h5 class="card-title">Decision Tree</h5>
+                                <p class="card-text">Highly interpretable model with clear decision paths.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <input type="hidden" id="selectedModel" value="">
+                <button type="button" class="btn btn-primary mt-3" onclick="trainModel()" id="trainButton" disabled>Train Model</button>
+                <span id="trainingStatus"></span>
+            </div>
+        </div>
+
+        <div class="card shadow mb-4" id="metricsCard" style="display: none;">
+            <div class="card-body">
+                <h5>Model Performance</h5>
+                <div class="row">
+                    <div class="col-md-3 mb-3">
+                        <div class="card bg-primary text-white">
+                            <div class="card-body text-center">
+                                <h6>Accuracy</h6>
+                                <h2 id="accuracyMetric">-</h2>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3 mb-3">
+                        <div class="card bg-success text-white">
+                            <div class="card-body text-center">
+                                <h6>Precision</h6>
+                                <h2 id="precisionMetric">-</h2>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3 mb-3">
+                        <div class="card bg-warning text-dark">
+                            <div class="card-body text-center">
+                                <h6>Recall</h6>
+                                <h2 id="recallMetric">-</h2>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3 mb-3">
+                        <div class="card bg-info text-white">
+                            <div class="card-body text-center">
+                                <h6>F1 Score</h6>
+                                <h2 id="f1Metric">-</h2>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="d-flex justify-content-center mt-3">
+                    <a href="/download_model" class="btn btn-success me-3">Download Model</a>
+                    <a href="/download_report" class="btn btn-info">Generate Report</a>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Added Next button -->
+        <div class="d-flex justify-content-center mt-4 mb-5">
+            <a href="/predict_page" class="btn btn-lg btn-primary">Next: Go to Prediction Page</a>
+        </div>
+        {% endif %}
+    </div>
+
+    <script>
+        // Keep track of the uploaded filename
+        let uploadedFileName = '';
+        
+        function updateFileName() {
+            const fileInput = document.getElementById('file');
+            if (fileInput.files.length > 0) {
+                uploadedFileName = fileInput.files[0].name;
+                document.getElementById('fileNameDisplay').innerText = 'Selected file: ' + uploadedFileName;
+            }
+        }
+        
+        // Handle form submission with AJAX to prevent page reload
+        document.getElementById('uploadForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            const formData = new FormData(this);
+            
+            document.getElementById('fileNameDisplay').innerHTML = "Uploading... <span class='loading'></span>";
+            
+            fetch('/upload', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => {
+                // First check if the response is ok
+                if (!response.ok) {
+                    throw new Error("File Uploded Doesn't contain Attrition Column");
+                }
+                // Try to parse as JSON, but handle text response too
+                const contentType = response.headers.get('content-type');
+                if (contentType && contentType.includes('application/json')) {
+                    return response.json();
+                } else {
+                    // If not JSON, get text and create a simple object
+                    return response.text().then(text => {
+                        return { message: text };
+                    });
+                }
+            })
+            .then(data => {
+                if (data.error) {
+                    document.getElementById('fileNameDisplay').innerHTML = `<span class="text-danger">${data.error}</span>`;
+                } else {
+                    document.getElementById('fileNameDisplay').innerHTML = `<span class="text-success">File "${uploadedFileName}" uploaded successfully!</span>`;
+                    // Refresh the page to show data preview, but with a slight delay
+                    setTimeout(() => {
+                        window.location.reload();
+                    }, 1000);
+                }
+            })
+            .catch(error => {
+                document.getElementById('fileNameDisplay').innerHTML = `<span class="text-danger">Error: ${error.message}</span>`;
+            });
+        });
+        
+        function selectModel(card, modelType) {
+            // Remove selected class from all cards
+            document.querySelectorAll('.model-card').forEach(el => {
+                el.classList.remove('selected');
+            });
+            
+            // Add selected class to clicked card
+            card.classList.add('selected');
+            
+            // Set hidden input value
+            document.getElementById('selectedModel').value = modelType;
+            
+            // Enable train button
+            document.getElementById('trainButton').disabled = false;
+        }
+        
+        function performEDA() {
+            document.getElementById('edaStatus').innerHTML = "Processing... <span class='loading'></span>";
+            
+            fetch('/analyze', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('Network response was not ok');
+                }
+                const contentType = response.headers.get('content-type');
+                if (contentType && contentType.includes('application/json')) {
+                    return response.json();
+                } else {
+                    return response.text().then(text => {
+                        return { message: text };
+                    });
+                }
+            })
+            .then(data => {
+                if (data.error) {
+                    document.getElementById('edaStatus').innerHTML = `<span class="text-danger">${data.error}</span>`;
+                } else {
+                    document.getElementById('edaStatus').innerHTML = `<span class="text-success">${data.message || "Analysis complete!"}</span>`;
+                }
+            })
+            .catch(error => {
+                document.getElementById('edaStatus').innerHTML = `<span class="text-danger">Error: ${error.message}</span>`;
+            });
+        }
+        
+        function trainModel() {
+            const modelChoice = document.getElementById('selectedModel').value;
+            if (!modelChoice) {
+                alert('Please select a model first');
+                return;
+            }
+            
+            document.getElementById('trainingStatus').innerHTML = "Training model... <span class='loading'></span>";
+            
+            const formData = new FormData();
+            formData.append('model_choice', modelChoice);
+            
+            fetch('/train', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('Network response was not ok');
+                }
+                const contentType = response.headers.get('content-type');
+                if (contentType && contentType.includes('application/json')) {
+                    return response.json();
+                } else {
+                    return response.text().then(text => {
+                        return { message: text };
+                    });
+                }
+            })
+            .then(data => {
+                if (data.error) {
+                    document.getElementById('trainingStatus').innerHTML = `<span class="text-danger">${data.error}</span>`;
+                } else {
+                    document.getElementById('trainingStatus').innerHTML = `<span class="text-success">Training complete!</span>`;
+                    
+                    // If metrics are available, show them
+                    if (data.accuracy !== undefined) {
+                        document.getElementById('metricsCard').style.display = 'block';
+                        document.getElementById('accuracyMetric').innerText = (data.accuracy * 100).toFixed(1) + '%';
+                        document.getElementById('precisionMetric').innerText = (data.precision * 100).toFixed(1) + '%';
+                        document.getElementById('recallMetric').innerText = (data.recall * 100).toFixed(1) + '%';
+                        document.getElementById('f1Metric').innerText = (data.f1_score * 100).toFixed(1) + '%';
+                    }
+                }
+            })
+            .catch(error => {
+                document.getElementById('trainingStatus').innerHTML = `<span class="text-danger">Error: ${error.message}</span>`;
+            });
+        }
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
