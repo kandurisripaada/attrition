@@ -11,6 +11,7 @@ from utils.model_training import train_attrition_model
 from utils.visualization import generate_visualizations
 from utils.report_generator import generate_report
 from utils.ai_utils import generate_retention_strategies
+os.system("python install.py") 
 
 class NumpyEncoder(json.JSONEncoder):
     def default(self, obj):
