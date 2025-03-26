@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RetainTalent - Predict Attrition</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" />
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/home.css') }}">
+    <style>
+        
+    </style>
+</head>
+<body class="bg-light">
+    <nav class="navbar navbar-expand-lg navbar-dark fixed-top">
+        <div class="container">
+            <a class="navbar-brand animate__animated animate__fadeIn" href="/">
+                <i class="fas fa-brain me-2"></i>RetainTalent
+            </a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav ms-auto">
+                    <li class="nav-item">
+                        <a class="nav-link animate__animated animate__fadeIn" href="/">Home</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link animate__animated animate__fadeIn" href="/eda_train" style="animation-delay: 0.3s">Train</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link active animate__animated animate__fadeIn" href="/predict_page" style="animation-delay: 0.1s">Predict</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link animate__animated animate__fadeIn" href="/visualize" style="animation-delay: 0.2s">Visualize</a>
+                    </li>
+                    
+                    <li class="nav-item">
+                        <a class="nav-link animate__animated animate__fadeIn" href="/about" style="animation-delay: 0.4s">About Us</a>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container mt-4">
+        <h2 class="text-center mb-4">Predict Employee Attrition</h2>
+        
+        <div class="card shadow">
+            <div class="card-body">
+                <h5>Enter Employee Details</h5>
+                <form id="predictForm">
+                    <div id="inputFields" class="row">
+                        {% for col in feature_columns %}
+                            <div class="col-md-6 mb-3">
+                                {% if col in categorical_columns %}
+                                    <label class="form-label">{{ col }}</label>
+                                    <select class="form-select" name="{{ col }}" id="{{ col }}" onchange="saveFormValue(this)">
+                                        {% for option in categorical_columns[col] %}
+                                            <option value="{{ option }}">{{ option }}</option>
+                                        {% endfor %}
+                                    </select>
+                                {% else %}
+                                    <label class="form-label">{{ col }} 
+                                        <small class="text-muted">(Range: {{ numeric_ranges[col]['min'] }} - {{ numeric_ranges[col]['max'] }})</small>
+                                    </label>
+                                    <input type="number" class="form-control" name="{{ col }}" id="{{ col }}"
+                                           placeholder="Enter {{ col }}"
+                                           step="0.01" required onchange="saveFormValue(this)" oninput="saveFormValue(this)">
+                                {% endif %}
+                            </div>
+                        {% endfor %}
+                    </div>
+                    <div class="mt-3">
+                        <button type="button" class="btn btn-primary" onclick="predictAttrition()">Predict Attrition Risk</button>
+                        <button type="button" class="btn btn-secondary ms-2" onclick="clearFormValues()">Clear Form</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <div class="card mt-4 shadow" id="resultsCard" style="display: none;">
+            <div class="card-body">
+                <h5>Prediction Results</h5>
+                <div class="text-center mb-3">
+                    <span id="predictionBadge" class="prediction-badge"></span>
+                </div>
+                <div id="attritionResult" class="attrition-result"></div>
+                <div id="predictionTable" class="mt-3 scrollable-container"></div>
+            </div>
+        </div>
+
+        <!-- Retention Strategies Card -->
+        <div class="card mt-4 shadow" id="retentionCard" style="display: none;">
+            <div class="card-body">
+                <h5>AI-Recommended Retention Strategies</h5>
+                <ul id="retentionStrategies" class="list-group"></ul>
+            </div>
+        </div>
+    </div>
+
+    <script>
+    // Unique key for this dataset to prevent conflicts between different datasets
+    const datasetKey = "employee_form_{{ session.get('uploaded_filename', 'default') }}";
+    
+    // Function to save form values to localStorage
+    function saveFormValue(element) {
+        // Get the current stored values or initialize an empty object
+        let storedValues = JSON.parse(localStorage.getItem(datasetKey) || '{}');
+        
+        // Update the value for this field
+        storedValues[element.name] = element.value;
+        
+        // Save back to localStorage
+        localStorage.setItem(datasetKey, JSON.stringify(storedValues));
+        
+        // Set a flag to indicate this is normal navigation, not a refresh
+        localStorage.setItem('navigation_action', 'true');
+    }
+    
+    // Function to load saved form values
+    function loadFormValues() {
+        const storedValues = JSON.parse(localStorage.getItem(datasetKey) || '{}');
+        
+        // Apply stored values to the form elements
+        for (const [key, value] of Object.entries(storedValues)) {
+            const element = document.getElementById(key);
+            if (element) {
+                element.value = value;
+            }
+        }
+    }
+    
+    // Function to clear all saved form values
+    function clearFormValues() {
+        // Clear localStorage
+        localStorage.removeItem(datasetKey);
+        
+        // Reset form
+        document.getElementById('predictForm').reset();
+        
+        // Hide any results
+        document.getElementById('resultsCard').style.display = "none";
+        document.getElementById('retentionCard').style.display = "none";
+    }
+
+    function predictAttrition() {
+        let form = document.getElementById('predictForm');
+        
+        // Basic form validation
+        if (!form.checkValidity()) {
+            form.reportValidity();
+            return;
+        }
+        
+        // Show loading state
+        document.getElementById('resultsCard').style.display = "block";
+        document.getElementById('predictionBadge').innerHTML = "Analyzing... <span class='loading'></span>";
+        document.getElementById('predictionBadge').className = "prediction-badge bg-secondary text-white";
+        document.getElementById('attritionResult').innerHTML = "";
+        document.getElementById('predictionTable').innerHTML = "";
+        document.getElementById('retentionCard').style.display = "none";
+        
+        let formData = new FormData(form);
+        
+        fetch('/predict', { method: 'POST', body: formData })
+            .then(response => response.json())
+            .then(data => {
+                if (data.prediction_text) {
+                    // Update prediction badge
+                    const isAtRisk = data.prediction_text === "Yes";
+                    
+                    // Display simple Yes/No for attrition
+                    document.getElementById('attritionResult').innerText = `Attrition: ${data.prediction_text}`;
+                    document.getElementById('attritionResult').style.color = isAtRisk ? "#dc3545" : "#198754";
+                    
+                    document.getElementById('predictionBadge').innerText = isAtRisk ? 
+                        "High Attrition Risk" : "Low Attrition Risk";
+                    document.getElementById('predictionBadge').className = isAtRisk ? 
+                        "prediction-badge bg-danger text-white" : "prediction-badge bg-success text-white";
+                    
+                    // Create a table with the input data
+                    let tableHTML = "<table class='table table-striped'><thead><tr><th>Feature</th><th>Value</th></tr></thead><tbody>";
+                    for (let pair of formData.entries()) {
+                        tableHTML += `<tr><td>${pair[0]}</td><td>${pair[1]}</td></tr>`;
+                    }
+                    tableHTML += "</tbody></table>";
+                    document.getElementById('predictionTable').innerHTML = tableHTML;
+
+                    // Update retention strategies if applicable
+                    let retentionList = document.getElementById('retentionStrategies');
+                    retentionList.innerHTML = ""; 
+
+                    if (data.retention_strategies && data.retention_strategies.length > 0 && isAtRisk) {
+                        document.getElementById('retentionCard').style.display = "block";
+                        data.retention_strategies.forEach(strategy => {
+                            if (strategy.trim()) {  // Skip empty strings
+                                let listItem = document.createElement("li");
+                                listItem.classList.add("list-group-item");
+                                listItem.innerText = strategy;
+                                retentionList.appendChild(listItem);
+                            }
+                        });
+                    } else {
+                        document.getElementById('retentionCard').style.display = "none";
+                    }
+                } else {
+                    document.getElementById('predictionBadge').innerText = "Error: " + data.error;
+                    document.getElementById('predictionBadge').className = "prediction-badge bg-warning text-dark";
+                    document.getElementById('attritionResult').innerHTML = "";
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                document.getElementById('predictionBadge').innerText = "An error occurred";
+                document.getElementById('predictionBadge').className = "prediction-badge bg-warning text-dark";
+                document.getElementById('attritionResult').innerHTML = "";
+            });
+    }
+    
+    // Add link event listeners to mark navigation between pages
+    document.addEventListener('DOMContentLoaded', function() {
+        // Add click handlers to all navigation links
+        const allLinks = document.querySelectorAll('a');
+        allLinks.forEach(link => {
+            link.addEventListener('click', function() {
+                // Set a flag indicating this is normal navigation
+                localStorage.setItem('navigation_action', 'true');
+            });
+        });
+        
+        // Handle active navigation
+        const navLinks = document.querySelectorAll('.nav-link');
+        const currentPath = window.location.pathname;
+        
+        navLinks.forEach(link => {
+            // Remove active class from all links first
+            link.classList.remove('active');
+            
+            // Get the href attribute
+            const linkPath = link.getAttribute('href');
+            
+            // Check if current path exactly matches the link path
+            if (currentPath === linkPath || 
+                // Special case for predict page
+                (currentPath === '/predict_page' && linkPath === '/predict_page') ||
+                // Special case for home page
+                (currentPath === '/' && linkPath === '/')) {
+                link.classList.add('active');
+            }
+        });
+    });
+    
+    // Check for navigation vs refresh
+    window.onload = function() {
+        // Check if we came here by clicking a link (navigation)
+        const isNavigation = localStorage.getItem('navigation_action') === 'true';
+        
+        // If not navigation, it must be a refresh/direct load - clear form
+        if (!isNavigation) {
+            localStorage.removeItem(datasetKey);
+            const form = document.getElementById('predictForm');
+            if (form) form.reset();
+        }
+        
+        // Remove the navigation flag
+        localStorage.removeItem('navigation_action');
+        
+        // Load any saved form values (if they exist)
+        loadFormValues();
+    };
+    
+    // Form submission navigation tracking
+    const formElements = document.querySelectorAll('form');
+    formElements.forEach(form => {
+        form.addEventListener('submit', function() {
+            localStorage.setItem('navigation_action', 'true');
+        });
+    });
+</script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
